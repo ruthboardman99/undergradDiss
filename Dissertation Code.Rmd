@@ -1,0 +1,435 @@
+---
+title: "Dissertation"
+output: word_document
+---
+## look at correlation co-efficients and regression --> maybe email kirils and check that it would be suitable? 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+A longitudinal study, using wave 8 from the understanding society covid-19 data and wave ... from the main stage Understanding Society Data. 
+Aggregate data of individual repsonses. 
+Chosen wave 8 (collected 24/03 to 31/03 2021) as this was the end of the third national lockdown (29/03), thus would have seen people facing furlough and other economic difficulties with industries shut. 
+
+Wave 10 of main stage data used
+
+```{r}
+# Downlaod data 
+library(vroom)
+library(tidyverse)
+March21 <- vroom("UKDA-8644-tab/tab/ch_indresp_w.tab", 
+                 col_select = c(pidp, racel_dv, ch_hsownd_cv, ch_sex_cv, ch_age, ch_newfurlough, ch_hhincome_amount, ch_ucreditb65, ch_hhnum, ch_xphs_cv, ch_ff_sempderived, ch_hours, ch_betaindin_xw, ch_betaindin_lw))
+
+Mainstage <-  vroom("UKDA-6614-tab/tab/ukhls_w10/j_indresp.tab", 
+                    col_select = c(pidp, j_racel_dv,  j_sex_dv,  j_jbisco88_cc, j_hidp, j_fimnnet_dv, j_jbsemp, j_jbhrs, j_indinub_xw)) 
+
+Mainstage2 <- vroom("UKDA-6614-tab/tab/ukhls_w10/j_hhresp.tab", 
+                    col_select = c(j_hidp, j_hsownd)) 
+```
+
+
+
+Join the waves. Need to join via pidp, then filter out people who have not had a constant occupation.
+ch = covid (March 2021)
+j = mainstage (2018-2019) ----- three years difference (three years between ages)
+
+```{r}
+## first join the two mainstage datasets 
+
+Mainstage1 <- Mainstage %>%
+  left_join(Mainstage2, by = "j_hidp")
+
+
+## join all three --> left join will filter out any observations in the mainstage data that werent in the COVID-19 data. 
+
+EconData <- March21 %>%
+  left_join(Mainstage1, by = "pidp")
+
+```
+
+
+
+Recode ethnicities --> nominal variable 
+```{r}
+EconData <- EconData %>% 
+  mutate(WhiteEthn = recode(racel_dv ,
+        '1' = "White",
+        '2' = NA_character_,
+        '3' = NA_character_,
+        '4' = NA_character_,
+        '9' = "Ethnic Minority",
+        '10' = "Ethnic Minority",
+        '11' = "Ethnic Minority", 
+        '12' = "Ethnic Minority",
+        '-9' = NA_character_,
+        .default = NA_character_))
+```
+
+Recode employment type --> nominal variable 
+
+```{r}
+
+
+EconData <- EconData %>% mutate(EmployedPre = recode(j_jbsemp, 
+                           '1' = "Employee", 
+                           '2' = "Self Employed", 
+                           '-8' = NA_character_,
+                           '-2' = NA_character_, 
+                           '-1' = NA_character_))                         
+                                                     
+```
+
+Recode universal credit 
+
+```{r}
+EconData <- EconData %>%
+  mutate(UniCredit = recode(ch_ucreditb65, 
+                                 '1' = "No", 
+                                 '2' = "Yes", 
+                                 '3' = "Yes", 
+                                 '4' = "Yes", 
+                                 '5' = "Yes", 
+                                 '6' = "Yes",
+                            '-9' = NA_character_, 
+                                 '-8' = NA_character_, 
+                                 '-2' = NA_character_, 
+                                 '-1' = NA_character_))
+
+EconData <- EconData %>%
+  filter(!is.na(UniCredit))
+
+EconData <- EconData %>%
+      mutate(UniBin = ifelse(UniCredit == "Yes", 0, 1))
+```
+
+
+
+
+Recode working hours to show difference in working hours pre and during covid. 
+
+```{r}
+EconData <- EconData %>%
+  mutate(HourDif = ch_hours - j_jbhrs)
+
+EconData <- EconData %>%
+  filter(HourDif < 100)
+```
+
+
+Recode housing payments and whether they are up to date 
+
+```{r}
+EconData <- EconData %>%
+  filter(ch_xphs_cv %in% 1:2) %>%
+      mutate(Payments = ifelse(ch_xphs_cv == 1, "Yes", "No"))
+
+EconData <- EconData %>%
+      mutate(PaymentsBin = ifelse(Payments == "Yes", 0, 1))
+```
+
+Create  new variable that contains: 
+ # 1 = EM and employee
+ # 2 = Em and self-employed
+ # 3 = White and employee 
+ # 4 = White and self-employed 
+ 
+```{r}
+EconData <- EconData %>%
+  filter(!is.na(WhiteEthn)) %>%
+  filter(!is.na(EmployedPre)) %>%
+  mutate(IndepVar  = case_when(
+    WhiteEthn == "Ethnic Minority" & EmployedPre == "Employee" ~ 1, 
+    WhiteEthn == "Ethnic Minority" & EmployedPre == "Self Employed" ~ 2, 
+    WhiteEthn == "White" & EmployedPre == "Employee" ~ 3, 
+    WhiteEthn == "White" & EmployedPre == "Self Employed" ~ 4
+  ))
+
+EconData <- EconData %>%
+  filter(!is.na(WhiteEthn)) %>%
+  filter(!is.na(EmployedPre)) %>%
+  mutate(IndepVar2  = case_when(
+    WhiteEthn == "Ethnic Minority" & EmployedPre == "Employee" ~ "Ethnic Minority Employee", 
+    WhiteEthn == "White" & EmployedPre == "Employee" ~ "White Employee", WhiteEthn == "Ethnic Minority" & EmployedPre == "Self Employed" ~ "Ethnic Minority Self-Employed",
+    WhiteEthn == "White" & EmployedPre == "Self Employed" ~ "White Self-Employed"
+  ))
+EconData <- EconData %>% filter(!is.na(ch_betaindin_lw))
+```
+
+
+
+
+
+
+
+###########################################################################################################
+
+
+
+
+
+
+
+
+
+
+Descriptive statistics 
+
+```{r}
+
+
+# Categrorical varaibles 
+EconData %>%
+  group_by(UniCredit) %>%
+  count() 
+
+EconData %>%
+  group_by(IndepVar) %>%
+  count() 
+
+EconData %>%
+  group_by("Payments") %>%
+  count() 
+
+# Continuous variables 
+
+  mean(EconData$HourDif)
+
+  median(EconData$HourDif)
+
+  min(EconData$HourDif)
+
+  max(EconData$HourDif)
+  
+  sd(EconData$HourDif)
+EconData <- EconData %>% mutate(IndepVar = as.factor(IndepVar))
+
+
+#######
+
+EconData %>%
+  count(WhiteEthn)
+
+EconData %>%
+  count(EmployedPre)
+
+
+# Percentage of each ethnicity and universal credit 
+
+PaymentsByRace <- EconData %>%
+  filter(!is.na(IndepVar)) %>%
+  filter(!is.na(Payments)) %>%
+  group_by(IndepVar) %>%
+  count(Payments) %>%
+  mutate(percPay = n/ sum(n) * 100) %>%
+  pivot_wider(c(-n),names_from = IndepVar, values_from = percPay)
+
+
+PaymentsByRace <- EconData %>%
+  filter(!is.na(IndepVar)) %>%
+  filter(!is.na(PaymentsBin)) %>%
+  group_by(IndepVar, PaymentsBin) %>%
+  count(PaymentsBin) %>%
+  summarise(n=n(),
+    mean=mean(PaymentsBin),
+    sd=sd(PaymentsBin)
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate(percUniCredit = n/ sum(n) * 100) %>%
+  pivot_wider(c(-n),names_from = IndepVar, values_from = percUniCredit)
+
+
+  barchart <- read_excel("Downloads/Boxplot.xlsx")
+EconData <- EconData %>% mutate(IndepVar =  as.character(IndepVar))
+
+Boxplot <- ggplot(EconData, aes(x = IndepVar2, y = HourDif)) +
+  geom_boxplot(outlier.size=0.5) +
+    scale_y_continuous(breaks=seq(-100, 100, by=20)) +
+  stat_summary(fun=mean, geom="point", shape=20, size=1, color="red", fill="red") +
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", size = 0.1, width = 0.5, colour = "red") +
+  labs(x = "Employment type and ethnicity", y = "Difference in working hours") +
+  theme_light() 
+  
+  
+
+
+##############################################################
+
+##############################################################
+
+# Payments 
+
+ barchart <- read_excel("Downloads/Boxplot.xlsx")
+View(Boxplot)
+install.packages("Hmisc")
+install.packages("tidyverse")
+library(tidyverse)
+
+one <- EconData %>%
+  group_by(IndepVar2, Payments) %>%
+  dplyr::summarise(cases = n()) %>% 
+  mutate(pct = cases/sum(cases),
+         lbl = scales::percent(pct)) 
+
+
+df$region <- factor(df$region, levels=c('A', 'E', 'D', 'C', 'B'))
+
+
+
+barchart$IndepVar2 <-factor(barchart$IndepVar2, levels = c("Ethnic Minority Employee", "White Employee", "Ethnic Minority Self-Employed", "White Self-Employed"))
+  reorder(IndepVar2 = c("Ethnic Minority Employee", "White Employee", "Ethnic Minority Self-Employed", "White Self-Employed"))
+  ggplot(barchart, 
+       aes(x = IndepVar2,
+           y = pct,
+           fill = Payments)) + 
+  geom_bar(stat = "identity",
+           position = "dodge2") +
+        geom_errorbar(data = barchart, mapping = aes( ymin = Lower, ymax = Upper), position = position_dodge2(width = 0.5, padding = 0.5), size = 0.1, colour = "red") +
+  labs(x = "Employment type and ethnicity", y = "Percentage") +
+  theme_light() + 
+    scale_y_continuous( breaks = seq(0, 100, 10)) +
+    scale_fill_grey()
+  
+
+  
+# As input for the prop.test() function we need the number of successes x and 
+# the number of trials n, i.e. in our case of the number of yes responses and 
+# the total number of responses.
+## ethnic minority
+x = 272
+n = 293
+
+
+# Use this information to create the 95% confidence interval for our sample with 
+# the prop.test() function
+# Hint: the default confidence level of the prop.test() function is 95%
+prop.test(x=x, n=n)
+
+```
+
+
+Create two new objects with self-employed and employees. 
+```{r}
+EconData <- EconData %>% mutate(IndepVar = as.character(IndepVar))
+
+Self <- EconData %>%
+  filter(IndepVar == 2 | IndepVar == 4) 
+
+Self <- Self %>%
+  mutate(IndepVar = ifelse(IndepVar == 2, "EM", "WH"))
+         
+Self1 <- table(Self$IndepVar, Self$Payments)
+
+Employee <- EconData %>%
+  filter(IndepVar == 1 | IndepVar == 3)
+
+EM <- EconData %>%
+  filter(IndepVar == 1 | IndepVar == 2)
+
+White <- EconData %>%
+  filter(IndepVar == 3 | IndepVar == 4)
+```
+
+
+
+
+```{r}
+ggplot(EconData, aes(x = factor(IndepVar), y = Payments)) + 
+  stat_summary(fun.y = mean, geom = "bar", position = position_dodge(width = .9)) +
+  stat_summary(fun.data = mean_se, geom = "linerange", position = position_dodge(width = .9)) +
+  ggtitle("Mean +/- SE")
+```
+
+Initial t-test and chi-square tests to show whether the relationships are significant. 
+
+Ethnic minorities and hours worked 
+Ha = Ethnic minorities who are self-employed are more likely to face reduced working hours during covid than the equivalent white individual and those who are employees. 
+Ho = There is no ethnic occupational difference between those who have and have not had their hours reduced. 
+t-test (continuous independent)
+```{r}
+class(EconData$IndepVar)
+## self employed --> does ethnicity make a difference? 
+resultSelf1 <- t.test(HourDif ~ IndepVar, Self, alt = "less")
+resultSelf
+
+resultSelf1
+
+## employees --> does ethnicity make a difference? 
+resultEmpl <- t.test(HourDif ~ IndepVar, Employee, alt = "less")
+resultEmpl
+## p-value is smaller than the alpha, suggesting that ethnicity causes a relationship between employees and difference in working hours.
+
+```
+
+
+## EMs and universal credit 
+## Ha = Self-employed ethnnic minorities are more likely to apply for universal credit than the equivalent white individual. 
+## Ho = There is no occupational ethnic difference between those who have been and hvae not applied for universal credit. 
+
+```{r}
+
+result2Self  <- chisq.test(SelfUni, simulate.p.value = T)
+
+SelfUni
+
+fisher.test(SelfUni)
+result2Self$expected
+
+result2Self <- fisher.test(table(Self$IndepVar, Self$UniCredit))
+result2Self
+
+result2Empl <- fisher.test(table(Employee$IndepVar, Employee$UniCredit))
+result2Empl
+## some of the expected counts are less than 5 and one is less than 1, thus result could be invalid and the assumptions have not been met. 
+## BUT the p-value is 0.001396, which is less than the alpha of 0.05, suggesting there is a relationship between ethnicity and employment type and universal credit applications. The porability of independent between the two varibales is thus low. 
+```
+
+## EMs and late housing payments 
+## Ha = Self-employed ethnic minorities are more likely to be behind on housing payments than the equivalent white inidvidual. 
+## Ho = There is no ethnic difference betwen those who are and are not behind on housing payments. 
+
+```{r}
+result3Self  <- chisq.test(table(Self$IndepVar, Self$Payments))
+result3Self
+result3Self$expected
+
+result3Empl <- chisq.test(table(Employee$IndepVar, Employee$Payments))
+result3Empl
+
+fisher.test(table(Self$IndepVar, Self$Payments))
+fisher.test(table(Employee$IndepVar, Employee$Payments))
+
+fisher.test(Self1)
+```
+
+
+```{r}
+install.packages("writexl")
+library(writexl)
+
+write_xlsx(one, "~/Downloads/Boxplot.xlsx")
+
+x <- c('tidyverse', 'openxlsx')
+sapply(X=x, FUN = require, character.only = TRUE)
+
+# Create graph---------
+dcs <- ggplot(mtcars) +
+  geom_point(aes(cyl, disp))
+
+# Export Pic -----------
+pic_path <- "~/Downloads/dcs.jpeg"
+png(filename = pic_path)
+plot(Boxplot)
+dev.off()
+
+library(openxlsx)
+# Add to a new work book -------------
+wb <- openxlsx::createWorkbook()
+addWorksheet(wb, "Plots")
+insertImage(wb, "Plots", pic_path)
+openxlsx::saveWorkbook(wb,
+                       "~/example.xlsx")
+
+# Kill pic
+unlink(pic_path)
+```
+
